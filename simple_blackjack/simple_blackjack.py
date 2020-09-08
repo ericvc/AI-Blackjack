@@ -4,6 +4,7 @@ import sys as sys
 from sys import argv
 import numpy as np
 
+
 def deal_cards(n: int):
   """
   This function randomly samples `n` cards from a "deck of cards" (with replacement)
@@ -18,17 +19,14 @@ def deal_cards(n: int):
 class Dealer:
     def __init__(self):
         self.cards = deal_cards(2)
-        self.hand_value = sum(self.cards)
         
 
 class Player:
-    def __init__(self, money):
-        self.money = float(money)
+    def __init__(self, money: float):
+        self.money = money
         self.cards = []
-        self.hand_value = sum(self.cards)
         
         
-# Define function for accepting user input (guess) and makem sure it is an integer between 1 and 100
 def enter_bet(player):
     """
     This function accepts 'Player' class objects as inputs and prompts the user to enter a bet amount. It then
@@ -50,11 +48,13 @@ def enter_bet(player):
     return (bet_amount)
     
 
-# Define function for accepting user input (guess) and making sure it is an integer between 1 and 100
 def get_starting_amount():
-    # Check that user-specificed starting amount is greater than zero
+    """
+    This function check that the starting player balance meets criteria: a floating point value greater than zero.
+    :return: A floating point representing the initial player balance.
+    """
     if len(argv) == 1:  # default starting amount
-        start_amount = float(100)
+        start_amount = 100
     elif len(argv) == 2:  # user-specified starting amount
         start_amount = float(argv[1])
     while not isinstance(start_amount, float) or start_amount <= 0:
