@@ -2,10 +2,6 @@ import os
 import random
 import sys as sys
 from sys import argv
-# from simple_blackjack import Player
-# from simple_blackjack import Dealer
-# from simple_blackjack import deal_cards
-# from simple_blackjack import enter_bet
 from simple_blackjack import *
 import numpy as np
 
