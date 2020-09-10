@@ -26,14 +26,14 @@ from keras.optimizers import Adam
 
 ### Background
 
-Blackjack is a good game to work with because the rules are
-straightforward and the game play is mostly algorithmic. The steps for
-playing a hand of blackjack are as follows:
+Blackjack is a good game on which to train a machine learning model
+because the rules are straightforward and the gameplay is mostly
+algorithmic. The steps for playing a hand of blackjack are as follows:
 
-1.  A player starts with two cards in their “hand”, whose value is
-    determined by summing the values of the cards together (face cards
-    are worth 10). The goal for the player is to maximize the value of
-    their hand without exceeding a total value of 21.
+1.  A player starts with two cards in their “hand”, whose overall value
+    is determined by summing the values of the cards together (face
+    cards are worth 10). The goal for the player is to maximize the
+    value of their hand without exceeding a total value of 21.
 
 2.  The dealers initial hand also consists of two cards, but only one of
     these is visible to the player(s).
@@ -43,21 +43,21 @@ playing a hand of blackjack are as follows:
     current hand (“stay”).
 
 4.  If the player’s hand value exceeds 21 (“bust”), the player loses the
-    hand. If the player’s hand value is less than 21 and they stay, the
-    dealer begins their routine.
+    round. If the player’s hand value is less than 21 and they choose
+    stay, the dealer begins their routine.
 
 5.  After a player elects to stay, the dealer is obligated to increase
     the value of their hand by hitting until the value of the hand is
     greater than 16. At this point, if the value of the dealer’s hand is
     greater than 21, the player wins. If the value of the dealer’s hand
     is greater than the player’s hand (and less than or equal to 21),
-    the dealer wins. Otherwise, the player also wins the hand.
+    the dealer wins. Otherwise, the player also wins the round.
 
 6.  If the player or dealer busts and their hand contains one or more
     ace cards, the value of an ace is converted from 11 to 1. The player
     or dealer can then resume their hand. (Another reason why it is
     important to consider the composition of a hand and not only its
-    standing value at each decision opportunity).
+    standing value at each decision-making opportunity).
 
 Not considered here is the ability to split a hand under certain
 circumstances. While an important rule and facet of the game, it is not
@@ -90,9 +90,9 @@ how deciding how to represent the data, in this case a hand of cards,
 for use in a machine learning model.
 
 My initial thought was to predict the outcome of a hand at each time
-step based only on the current value, ignoring the card composition of
-the hand that yields its overall value. However, after some
-consideration I determined that composition of the cards would also be
+step based only on the current value of the hand, ignoring the card
+composition of the hand that yields its overall value. However, after
+some consideration I decided that composition of the cards would also be
 important information when predicting the potential outcomes for a given
 hand, and that I would need to somehow encode this information as a
 feature of the data. Indeed, a well-known fact about the game of
@@ -112,9 +112,20 @@ structure of the vector.
 
 </center>
 
-This method of representing the composition of a hand of cards also
-makes it easy to calculate its overall value when simulating each game
-because the value of a player’s hand *h* is given from:
+For example, consider the following hand represented in the vector form
+just described;
+
+<center>
+
+![The player hand (P) matrix](figures/example_hand.gif)
+
+</center>
+
+Can you determine the card composition of the hand? You should get
+\[3\], \[3\], \[5\], and \[6\] for a total value of 17. In fact, this
+method of representing the composition of a hand of cards also makes it
+easy to calculate its overall value when simulating each game because
+the value of a player’s hand *h* is given from:
 
 <center>
 
@@ -138,7 +149,7 @@ def create_card_vectors(n: int, deck: tuple):
     """
     n_cards = len(set(deck))
     vec = np.array([[0] * n_cards])
-    val = np.random.choice(deck, n, replace=False)
+    val = np.random.choice(deck[1:], n, replace=True) #  Do not sample '1'
     for i in val:
         vec[:, i-1] += 1
     return vec
@@ -221,7 +232,7 @@ array([[0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]])
 
 ![Outline of the game-playing AI. The game considers three types of
 outcomes, and the machine learning model is trained to predict the
-likelihood of each occurrence.](figures/fig.png)
+likelihood of each occurrence.](figures/game_summary.png)
 
 </center>
 
@@ -247,8 +258,10 @@ game-playing AI, are summarized in the figure above.
     over 21 or because the dealer’s hand exceeded a value of 16 and was
     still lower than the value of the player’s hand (a win).
 
-The type of outcome for each round *y* can be considered a categorical
-variable and encoded as follows:
+The plan is for the AI to work by predicting the most likely outcome of
+a given hand, and decides whether to hit or stay on the basis of this
+predicted outcome. The type of outcome for each round *y* can be
+considered a categorical variable and encoded as follows:
 
 <center>
 
@@ -391,7 +404,8 @@ pre-defined number of iterations (e.g., every 50th game), the weights of
 the target model are updated with the weights from the online model. The
 purpose of this approach is to avoid instability that can arise during
 reinforcement learning, caused by feedback loops that can disrupt the
-network.
+network and the optimization
+gradient.
 
 ``` python
 def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
