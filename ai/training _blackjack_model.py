@@ -1,21 +1,14 @@
 import keras
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from keras import initializers
-from keras.layers import Dense
-from keras.models import Model, Input
+from keras.layers import Dense, ActivityRegularization
+from keras.models import Model, Input, model_from_json
 from keras.optimizers import Adam
-import pydotplus
-from keras.utils.vis_utils import model_to_dot
-
-
-keras.utils.vis_utils.pydot = pydot
-plot_model(online_model, to_file='model.png')
 
 
 # Create some helper functions for the main program loop
-def create_card_vectors(n: int, deck: tuple):
+def create_card_vectors(n: int, deck: tuple) -> np.array:
     """
     This function creates 'card vectors' - column vectors with 11 rows, where i-th row corresponds to playing cards
     with value i+1. The scalar value of each row represents the number of each card the player currently posses.
@@ -25,11 +18,11 @@ def create_card_vectors(n: int, deck: tuple):
      in the deck.
     """
     n_cards = len(set(deck))
-    vec = np.array([[0] * n_cards])
+    cardvec = np.array([[0] * n_cards])
     val = np.random.choice(deck[1:], n, replace=True) #  Do not sample '1'
     for i in val:
-        vec[:, i-1] += 1
-    return vec
+        cardvec[:, i-1] += 1
+    return cardvec
 
 
 def dealer(player_hand, dealer_hand, deck: tuple):
@@ -51,30 +44,37 @@ def dealer(player_hand, dealer_hand, deck: tuple):
             dealer_hand[0][10] -= 1
             dealer_hand[0][0] += 1
         continue
-    if (dealer_hand * vals).sum() > 21 or (dealer_hand * vals).sum() < (player_hand * vals).sum():
-        return True#, np.concatenate((player_hand, dealer_hand), axis=1)
+    if (dealer_hand * vals).sum() > 21:
+        flag = 1
+        return True, flag
+    elif (dealer_hand * vals).sum() < (player_hand * vals).sum():
+        flag = 0
+        return True, flag
     else:
-        return False#, np.concatenate((player_hand, dealer_hand), axis=1)
+        flag = 0
+        return False, flag
 
 
-def create_online_model(n_neurons: int = 128, verbose: bool=True, save_graph: bool=True):
+def create_online_model(n_neurons: int = 32, verbose: bool=False, save_graph: bool=False) -> tf.keras.Model:
     """
     This function creates a neural network used for online training.
     :param n_neurons: integer. The number of neurons in the first layer of the model.
     :return: A compiled tensorflow.keras.Model object.
     """
     inputs = Input(shape=(22,))
-    dense1 = Dense(n_neurons, activation='elu',
+    dense_1 = Dense(n_neurons, activation='elu',
                   kernel_initializer="he_uniform",
                   bias_initializer=initializers.RandomNormal()
                   )(inputs)
-    dense2 = Dense(n_neurons, activation='elu',
+    batch_norm_1 = ActivityRegularization(l2=0.001)(dense_1)
+    dense_2 = Dense(n_neurons, activation='elu',
                   kernel_initializer="he_uniform",
                   bias_initializer=initializers.RandomNormal()
-                  )(dense1)
-    outputs = Dense(3, activation='softmax',
+                  )(batch_norm_1)
+    batch_norm_2 = ActivityRegularization(l2=0.001)(dense_2)
+    outputs = Dense(4, activation='softmax',
                   kernel_initializer="glorot_uniform",
-                  )(dense2)
+                  )(batch_norm_2)
     model = Model(inputs=inputs, outputs=outputs, name="blackjack_model")
     model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
     if verbose:
@@ -93,7 +93,7 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
     :return: an integer value corresponding to the outcome of the simulation. Type A (0), B(1), or C(2).
     """
     vals = np.unique(deck)  # Card values
-    y = np.array([[0] * 3])  # Container array for categorical outcome
+    y = np.array([[0] * 4])  # Container array for categorical outcome
     # Starting hands of cards for the player and dealer
     player_hand = create_card_vectors(2, deck)
     dealer_hand = create_card_vectors(1, deck)  # Dealer shows only one card at the start
@@ -101,38 +101,42 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
         player_hand[0][10] -= 1
         player_hand[0][0] += 1
     if (player_hand * vals).sum() == 21:  # Instant win
-        y[:, 0] += 1
-        cards = np.concatenate((player_hand, dealer_hand), axis=1)
-        online_model.fit(cards, y, verbose=False)  # Update online model
         return 0
 
     while True:
         # Array with the player hand and dealer hand represented as 1-D column vectors
         cards = np.concatenate((player_hand, dealer_hand), axis=1)
         # Use the target model to generate predictions based on the hand
-        predictions = target_model.predict(cards)
-        j = np.argmax(predictions)  # Predicted categorical outcome
+        q_values = target_model.predict(cards)[0]
+        if q_values[0:3].sum() > q_values[3]:
+            action = "stay"
+        else:
+            action = "hit"
 
-        # Stay-and-Win
-        if j == 0:
-            outcome = dealer(player_hand, dealer_hand, deck)  # Dealer routine returns outcome
-            if outcome:
+        # Stay
+        if action == "stay":
+            outcome, flag = dealer(player_hand, dealer_hand, deck)  # Dealer routine returns outcome
+            if outcome and flag:
                 y[:, 0] += 1
-                online_model.fit(cards, y, verbose=False)  # Update online model
+                online_model.fit(cards, y, verbose=False)
                 return 0
-            else:
+            elif outcome and not flag:
                 y[:, 1] += 1
-                online_model.fit(cards, y, verbose=False)  # Update online model
+                online_model.fit(cards, y, verbose=False)
                 return 1
+            else:
+                y[:, 3] += 1
+                online_model.fit(cards, y, verbose=False)
+                return 3
 
         # Hit
-        if j == 1:
+        if action == "hit":
             new_card = create_card_vectors(1, deck)  # Generate new card vector
             new_hand = player_hand + new_card  # Add new card to existing player hand
             while (new_hand * vals).sum() > 21:
                 if new_hand[0][10] == 0:
                     y[:, 2] += 1
-                    online_model.fit(cards, y, verbose=False)  # Update online model
+                    online_model.fit(cards, y, verbose=False)
                     return 2
                 else:
                     new_hand[0][10] -= 1
@@ -141,18 +145,6 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
             if (new_hand * vals).sum() <= 21:
                 player_hand = new_hand  # Update 'player_hand' value (reiterate loop)
                 continue
-
-        # Stay
-        if j == 2:
-            outcome = dealer(player_hand, dealer_hand, deck)  # Dealer routine returns outcome
-            if outcome:
-                y[:, 0] += 1
-                online_model.fit(cards, y, verbose=False)  # Update online model
-                return 0
-            else:
-                y[:, 1] += 1
-                online_model.fit(cards, y, verbose=False)  # Update online model
-                return 1
 
 
 def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
@@ -166,7 +158,7 @@ def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
     :param n_report: integer. The number of iterations before performance metrics are reported in the console window.
     :return: an integer value corresponding to the outcome of the simulation. Type A (0), B (1), or C (2).
     """
-    online_model = create_online_model(16, verbose=False, save_graph=False)  #Create online model
+    online_model = create_online_model(32, verbose=False, save_graph=False)  #Create online model
     target_model = keras.models.clone_model(online_model)  # Create target model as copy of online model
     deck = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11)  # Define card deck values
     outcomes = np.zeros(n_train)  # Container for training simulation outcomes
@@ -178,32 +170,45 @@ def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
             # Calculate performance metrics and return results in the console
             unique, counts = np.unique(outcomes[:ite], return_counts=True)
             unique_run, counts_run = np.unique(outcomes[(ite - n_report):ite], return_counts=True)
-            overall_acc = np.round(counts[0] / ite, 4)
-            running_acc = np.round(counts_run[0] / n_report, 4)
-            print(f"Iteration: {ite}/{n_train}...Overall Accuracy: {overall_acc}...Running Accuracy: {running_acc}")
+            overall_win = np.round(counts[0:2].sum() / ite, 4)
+            running_win = np.round(counts_run[0:2].sum() / n_report, 4)
+            print(f"Iteration: {ite}/{n_train}...Overall Accuracy: {overall_win}...Running Accuracy: {running_win}")
     return online_model, target_model, outcomes
 
 
 # Run game simulations (takes a bit of time)
-n_train = 200000
-online_model, target_model, outcomes = run_simulations(n_train=n_train, n_update=50)
+n_train = 100000
+online_model, target_model, outcomes = run_simulations(n_train=n_train, n_update=100, n_report=500)
 
 
 # serialize model to JSON
 model_json = online_model.to_json()
-fname = "online_model.json"
+fname = "ai/models/online_model.json"
 with open(fname, "w") as json_file:
     json_file.write(model_json)
 # serialize weights to HDF5
-online_model.save_weights("online_model.h5")
+online_model.save_weights("ai/models/online_model.h5")
 print("Saved model to disk")
 
 
-# load json and create model
-json_file = open('online_model.json', 'r')
+# load json and compile model
+json_file = open('ai/models/online_model.json', 'r')
 loaded_model_json = json_file.read()
 json_file.close()
-loaded_model = model_from_json(loaded_model_json)
+loaded_model = tf.keras.models.model_from_json(loaded_model_json)
 # load weights into new model
-loaded_model.load_weights("online_model.h5")
+loaded_model.load_weights("ai/models/online_model.h5")
 print("Loaded model from disk")
+loaded_model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy")
+
+result = []  # Save outcome of each round to container
+n_iter = 10000  # Number of games to simulate
+deck_of_cards = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11)
+for ite in range(0, n_iter):
+    np.random.seed(2 * ite)  # For reproducability
+    o = run_simulation(loaded_model, loaded_model, deck=deck_of_cards)
+    result.append(o)
+unique, counts = np.unique(result, return_counts=True)
+total_wins = counts[0:2].sum()
+print(f"The AI won {total_wins} out of {n_iter} rounds ({round(100*total_wins/n_iter,1)}%).")
+'The AI won 4063 out of 10000 rounds (40.6%).'
