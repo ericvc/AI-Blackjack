@@ -69,7 +69,7 @@ def create_online_model(n_neurons: int = 32, verbose: bool=False, save_graph: bo
     batch_norm_1 = ActivityRegularization(l2=0.001)(dense_1)
     dense_2 = Dense(n_neurons, activation='elu',
                   kernel_initializer="he_uniform",
-                  bias_initializer=initializers.RandomNormal()
+                  bias_initializer=initializers.RandomNormal()00
                   )(batch_norm_1)
     batch_norm_2 = ActivityRegularization(l2=0.001)(dense_2)
     outputs = Dense(4, activation='softmax',
@@ -84,7 +84,7 @@ def create_online_model(n_neurons: int = 32, verbose: bool=False, save_graph: bo
     return model
 
 
-def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, deck: tuple):
+def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, deck: tuple) -> int:
     """
     This function runs a single instance of a game of 21.
     :param model: the "online" model that is trained on the outcome of each game.
@@ -201,6 +201,7 @@ loaded_model.load_weights("ai/models/online_model.h5")
 print("Loaded model from disk")
 loaded_model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy")
 
+
 result = []  # Save outcome of each round to container
 n_iter = 10000  # Number of games to simulate
 deck_of_cards = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11)
@@ -211,4 +212,4 @@ for ite in range(0, n_iter):
 unique, counts = np.unique(result, return_counts=True)
 total_wins = counts[0:2].sum()
 print(f"The AI won {total_wins} out of {n_iter} rounds ({round(100*total_wins/n_iter,1)}%).")
-'The AI won 4063 out of 10000 rounds (40.6%).'
+'The AI won 1850 out of 5000 rounds (40.6%).'
