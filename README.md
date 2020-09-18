@@ -5,8 +5,8 @@ See the README file in each directory for more details.
 
 ## simple_blackjack
 Repository containing a Python module that supports a terminal-based game of Blackjack.
-![](simple_blackjack/figures/bj_terminal.png)
+![](ai/figures/game_assist.JPG)
 
 ## ai
 Repository containing code for training a machine learning model to play Blackjack using reinforcement learning.
-![](ai/figures/plot2.png)
+![](ai/README_files/figure-markdown_github/plotting_2-1.png)
