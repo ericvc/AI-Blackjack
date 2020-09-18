@@ -2,8 +2,8 @@ import keras
 import numpy as np
 import tensorflow as tf
 from keras import initializers
-from keras.layers import Dense, ActivityRegularization
-from keras.models import Model, Input, model_from_json
+from keras.layers import Dense, Dropout
+from keras.models import Model, Input
 from keras.optimizers import Adam
 
 
@@ -37,18 +37,17 @@ def dealer(player_hand, dealer_hand, deck: tuple):
     """
     vals = np.unique(deck)
     assert (player_hand * vals).sum() <= 21
-    while (dealer_hand * vals).sum() < 17:
+    while (dealer_hand * vals).sum() < (player_hand * vals).sum() and (dealer_hand * vals).sum() < 17:
         new_card = create_card_vectors(1, deck)
         dealer_hand = dealer_hand + new_card
         if (dealer_hand * vals).sum() > 21 and dealer_hand[0][10] > 0:
             dealer_hand[0][10] -= 1
             dealer_hand[0][0] += 1
-        continue
     if (dealer_hand * vals).sum() > 21:
-        flag = 1
+        flag = 0
         return True, flag
     elif (dealer_hand * vals).sum() < (player_hand * vals).sum():
-        flag = 0
+        flag = 1
         return True, flag
     else:
         flag = 0
@@ -66,15 +65,17 @@ def create_online_model(n_neurons: int = 32, verbose: bool=False, save_graph: bo
                   kernel_initializer="he_uniform",
                   bias_initializer=initializers.RandomNormal()
                   )(inputs)
-    batch_norm_1 = ActivityRegularization(l2=0.001)(dense_1)
-    dense_2 = Dense(n_neurons, activation='elu',
+    dropout_1 = Dropout(0.5)(dense_1)
+    dense_2 = Dense(n_neurons,
+                  activation='elu',
                   kernel_initializer="he_uniform",
-                  bias_initializer=initializers.RandomNormal()00
-                  )(batch_norm_1)
-    batch_norm_2 = ActivityRegularization(l2=0.001)(dense_2)
-    outputs = Dense(4, activation='softmax',
+                  bias_initializer=initializers.RandomNormal()
+                  )(dropout_1)
+    dropout_2 = Dropout(0.5)(dense_2)
+    outputs = Dense(4,
+                  activation='softmax',
                   kernel_initializer="glorot_uniform",
-                  )(batch_norm_2)
+                  )(dropout_2)
     model = Model(inputs=inputs, outputs=outputs, name="blackjack_model")
     model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
     if verbose:
@@ -84,7 +85,7 @@ def create_online_model(n_neurons: int = 32, verbose: bool=False, save_graph: bo
     return model
 
 
-def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, deck: tuple) -> int:
+def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, deck: tuple):
     """
     This function runs a single instance of a game of 21.
     :param model: the "online" model that is trained on the outcome of each game.
@@ -101,13 +102,18 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
         player_hand[0][10] -= 1
         player_hand[0][0] += 1
     if (player_hand * vals).sum() == 21:  # Instant win
+        y[:, 0] += 1
+        cards = np.concatenate((player_hand, dealer_hand), axis=1)
+        online_model.fit(cards, y, verbose=False)
         return 0
 
     while True:
         # Array with the player hand and dealer hand represented as 1-D column vectors
         cards = np.concatenate((player_hand, dealer_hand), axis=1)
         # Use the target model to generate predictions based on the hand
-        q_values = target_model.predict(cards)[0]
+        q_value_predictions = np.stack([target_model(cards, training=True) for sample in range(50)])
+        q_values = q_value_predictions.mean(axis=0)[0]
+        #action = random.choices(population=["stay","hit"], weights=[q_values[0:3].sum(), q_values[3]], k=1)[0]
         if q_values[0:3].sum() > q_values[3]:
             action = "stay"
         else:
@@ -183,11 +189,11 @@ online_model, target_model, outcomes = run_simulations(n_train=n_train, n_update
 
 # serialize model to JSON
 model_json = online_model.to_json()
-fname = "ai/models/online_model.json"
+fname = "ai/models/online_model_3.json"
 with open(fname, "w") as json_file:
     json_file.write(model_json)
 # serialize weights to HDF5
-online_model.save_weights("ai/models/online_model.h5")
+online_model.save_weights("ai/models/online_model_3.h5")
 print("Saved model to disk")
 
 
@@ -203,13 +209,12 @@ loaded_model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy")
 
 
 result = []  # Save outcome of each round to container
-n_iter = 10000  # Number of games to simulate
+n_iter = 5000  # Number of games to simulate
 deck_of_cards = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11)
 for ite in range(0, n_iter):
-    np.random.seed(2 * ite)  # For reproducability
-    o = run_simulation(loaded_model, loaded_model, deck=deck_of_cards)
+    np.random.seed(222 * ite)  # For reproducability
+    o = run_simulation(online_model, online_model, deck=deck_of_cards)
     result.append(o)
 unique, counts = np.unique(result, return_counts=True)
 total_wins = counts[0:2].sum()
 print(f"The AI won {total_wins} out of {n_iter} rounds ({round(100*total_wins/n_iter,1)}%).")
-'The AI won 1850 out of 5000 rounds (40.6%).'

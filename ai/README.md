@@ -317,16 +317,8 @@ Simulating games and training models based on the current conditions and
 observed outcomes is a form of reinforcement learning (RL). RL generally
 requires more examples to train on than other machine learning
 approaches, but the data can typically be generated easily by
-simluation. The process may just take a while.
-
-The model used is a deep neural network with a user-selected number of
-neurons and 2 hidden layers. The output of the model uses a softmax
-activation function over a dense layer with 4 neurons, one for each type
-of outcome in the game (at least as conceived of here). The `Adam`
-optimization algorithm with the learning rate hyperparameter set to
-0.001 is used here for backpropagation. Weight decay regularization
-(L2=0.01) is also applied to the outputs of each `Dense`
-layer.
+simluation. The process may just take a
+while.
 
 ``` python
 def create_online_model(n_neurons: int = 32, verbose: bool=True, save_graph: bool=False) -> tf.keras.Model:
@@ -337,19 +329,21 @@ def create_online_model(n_neurons: int = 32, verbose: bool=True, save_graph: boo
     """
     inputs = Input(shape=(22,))
     dense_1 = Dense(n_neurons,
-                  activity_regularizer=regularlizers.l2(0.01),
                   activation='elu',
                   kernel_initializer="he_uniform",
                   bias_initializer=initializers.RandomNormal()
                   )(inputs)
-    dense_2 = Dense(n_neurons, activation='elu',
-                  activity_regularizer=regularlizers.l2(0.01),
+    dropout_1 = Dropout(0.5)(dense_1)
+    dense_2 = Dense(n_neurons, 
+                  activation='elu',
                   kernel_initializer="he_uniform",
                   bias_initializer=initializers.RandomNormal()
-                  )(dense_1)
-    outputs = Dense(4, activation='softmax',
+                  )(dropout_1)
+    dropout_2 = Dropout(0.5)(dense_2)             
+    outputs = Dense(4, 
+                  activation='softmax',
                   kernel_initializer="glorot_uniform",
-                  )(dense_2)
+                  )(dropout_2)
     model = Model(inputs=inputs, outputs=outputs, name="blackjack_model")
     model.compile(optimizer=Adam(lr=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
     if verbose:
@@ -359,7 +353,50 @@ def create_online_model(n_neurons: int = 32, verbose: bool=True, save_graph: boo
     return model
 ```
 
-The code for simulating a single game of blackjack is given
+The model used is a deep neural network with a user-selected number of
+neurons and 2 hidden layers. The output layer uses a softmax activation
+function over 4 neurons, one for each type of outcome in the game (at
+least as conceived of here). The `Adam` optimization algorithm with the
+learning rate hyperparameter set to 0.001 is used here for
+backpropagation. ~~Weight decay regularization (L2=0.01) is also applied
+to the outputs of each `Dense` layer.~~
+
+My first attempt at fitting the model used L2 regularization on the
+weights of the `Dense` layers. But after examining some of the results
+of the trained model, I quickly suspected that it would also be
+important to consider the uncertainty in these model predictions
+because, in many cases, the decision of whether the agent should ‘hit’
+or ‘stay’ was based on probabilities close to 50% (ambiguous). In the
+second version of the model, weight decay was replaced by `Dropout`
+layers as a means of regularization. Using dropout layers also allows
+for estimation of the uncertainty in the model predictions by using a
+technique called Monte Carlo dropout, which is similar to approximate
+Bayesian inference. MC dropout works by sampling **n** predictions from
+the model, setting the “training” argument to `True` in order to use the
+dropout layers. Because different combinations of neurons are used for
+each sample, each of the estimates will differ. Averaging over these
+samples will then give a better point estimate of the predicted outcome,
+and can also be used to calculate a credibility interval for the
+estimate. The downside of this approach is that each simulation takes a
+bit longer because of the need to generate samples. Because of the high
+number of iterations needed to train the model, this small extra step
+can actually lead to a much longer overall training time. Here is an
+example that generates 50 sample predictions for a given input, averages
+over them to find a point estimate of the central tendency, and also
+calculates the 90% highest posterior density interval (HPDI):
+
+``` python
+from numpyro import hpdi #  HPDI function
+
+cards = np.concatenate((player_cards, dealer_cards), axis=1) #  model input
+Q_value_predictions = np.stack([target_model(cards, training=True) for i in range(50)])
+Q_values_mean = Q_value_predictions.mean(axis=0)[0]
+print(Q_values_mean)
+Q_values_hpdi = hpdi(Q_value_predictions, prob=0.9, axis=0)
+print(Q_values_hpdi)
+```
+
+The code for simulating a single round of blackjack is given
 here:
 
 ``` python
@@ -380,17 +417,21 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
         player_hand[0][10] -= 1
         player_hand[0][0] += 1
     if (player_hand * vals).sum() == 21:  # Instant win
+        cards = np.concatenate((player_hand, dealer_hand), axis=1)
+        y[:, 0] += 1
+        online_model.fit(cards, y, verbose=False)
         return 0
 
     while True:
         # Array with the player hand and dealer hand represented as 1-D column vectors
         cards = np.concatenate((player_hand, dealer_hand), axis=1)
         # Use the target model to generate predictions based on the hand
-        q_values = target_model.predict(cards)[0]
-        if q_values[0:3].sum() > q_values[3]:
-            action = "stay"
+        Q_value_predictions = np.stack([target_model(cards, training=True) for i in range(50)])
+        Q_values = Q_value_predictions.mean(axis=0)[0]
+        if Q_values[0:3].sum() > Q_values[3]:
+          action = "stay"
         else:
-            action = "hit"
+          action = "hit"
 
         # Stay
         if action == "stay":
@@ -427,33 +468,33 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
 ```
 
 Blackjack simulations are run repeatedly, with the observed outcomes of
-the games used as labels and the state of the player and dealer hands
-serving as the inputs for training the model. For training, I opted to
-borrow methods from Deep Q-Learning by using fixed Q-value targets to
-predict the likelihood of the different possible outcomes. Using fixed
-Q-value targets have been shown to speed up the rate of learning and
-improve estimates of the model parameters during training. This
+the games used as output labels and the state of the player and dealer
+hands serving as the inputs for training the model. For training, I
+opted to borrow methods from Deep Q-Learning by using fixed Q-value
+targets to predict the probability of each possible outcomes. Using
+fixed Q-value targets has been shown to speed up the rate of learning
+and improve estimates of the model parameters during training. This
 technique involves actually creating two separate machine learning
 models: an “online model” and a “target model”. The target model is used
-by the AI to predict the outcomes of a game given the current hand
-(i.e., the Q-values), but the actual training based on the outcome of
-each round takes place using the online model. After a pre-defined
-number of iterations (e.g., every 50th game), the weights of the target
-model are updated using the weights estimated from the online model. The
-purpose of this approach is to avoid instabilities that can arise during
-reinforcement learning, which can ultimately lead to poor optimization
-gradients such that the backpropagation algorithm is unable to
-effectively explore the parameter space.
+by the AI to predict the outcomes of a game given the current hand, but
+the actual training, based on the outcome of each round, takes place
+using the online model. After a pre-defined number of iterations (e.g.,
+every 50th game), the weights of the target model are updated using the
+weights estimated from the online model. The purpose of this approach is
+to avoid instabilities that can arise during reinforcement learning,
+which can ultimately lead to poor optimization gradients such that the
+backpropagation algorithm is unable to effectively explore the parameter
+space.
 
-The framework used here is very similar to approaches like proper Deep
-Q-Learning, but differs in two import respects. First, the
+The framework used here is very similar to approaches from proper Deep
+Q-Learning, but differ in two import respects. First, the
 decision-making model is updated each round using a labeled
 (categorical) outcome with categorical cross-entropy loss function. True
-Q-learning instead involves training a network based on the outcome of a
-continuous reward function (e.g., Huber loss) based on the . Second,
-there is no “replay buffer” or limited cache of prior gameplay
-experiences for the model to call upon. The model used here is updated
-after each round, with no memory
+Q-learning would instead involve training a network based on the outcome
+of a continuous reward function (e.g., Huber loss). Second, there is no
+“replay buffer” or limited cache of prior gameplay experiences for the
+model to call upon. The model used here is updated after each round,
+with no memory
 limitation.
 
 ``` python
@@ -491,7 +532,7 @@ let the program run:
 
 ``` python
 # Run game simulations (takes a bit of time)
-n_train = 100000
+n_train = 50000
 online_model, target_model, outcomes = run_simulations(n_train=n_train, n_update=100)
 
 
@@ -538,12 +579,10 @@ print(f"The AI won {total_wins} out of {n_iter} rounds ({round(100*total_wins/n_
 The AI won 1804 out of 5000 rounds (36.1%).
 ```
 
-}
-
-A winning rate of approximately 36% seems reasonably good, especially
-when considering the strong influence that the laws of probability have
-on the outcomes of each round. But, I will continue exploring other
-model fitting techniques to try and improve this number.
+A win rate of approximately 36% seems reasonably good, especially when
+considering the strong influence that chance will have on the outcome of
+each round. But, I will continue exploring other model fitting
+techniques to try and improve on this number.
 
 I also wanted to get a sense of how the results of the neural network
 could guide player’s decisions, given their current hand, similar to the
@@ -551,16 +590,14 @@ chart featured in the first figure. Therefore, I plotted the predicted
 probability that a player will win a round should they elect to ‘stay’,
 based on the cards they were initially dealt and the up card shown by
 the dealer. The figure makes intuitive sense given what most people know
-about the game of Blackjack: the lower the value of your initial cards,
+about the game of Blackjack: the lower the value of your initial hand,
 the less likely you are to win the round. Furthermore, the probability
-of winning with a low hand value decreases with larger values of the
-dealer’s up card. The results also suggest that the penalty for a bad
-‘hit’ is lower with a *soft hand* (i.e., a hand with an Ace) because
-of tthis card can take a value of 1 if needed. As a result, the model
-shows that players are typically better off hitting with a soft hand
-rather than a hard hand due to the lower risk of going bust. This, of
-course, makes intuitive sense, but it is nonetheless still fascinating
-to see that the model learned that aspect of the game.
+of winning with a low hand value decreases with larger values shown by
+the dealer’s up card. The results also show that the probability of a
+game-ending bad ‘hit’ is lower with a *soft hand* (i.e., a hand with an
+Ace) because this card can take a value of 1 if necessary. As a result,
+the model shows that players are typically better off hitting with a
+soft hand rather than a hard hand due to the lower risk of going bust.
 
 Viewing the continuous probabilities, however, also reveals a large
 region of the card space where the “best” action is predicted to be only
@@ -639,12 +676,18 @@ The game-playing AI shown here uses a machine learning model to decide
 the best action (‘hit’ or ‘stay’) given the composition of the current
 hand and the value of the dealer up card. From this simple set of
 decision-making rules, guided by the predictions ML model, the AI wins
-games at a rate of around 37%.
+games at a rate of around 36%.
 
-The next step is to incorporate the AI into the `simple_blackjack`
+~~The next step is to incorporate the AI into the `simple_blackjack`
 module found in the other directory of this repo. The purpose of this
 will be to provide a “suggestion” feature to players. This feature will
 report the best predicted choice of action (“Hit”, “A-Hit”, etc.) but
 leave the final decision to the player. From there, I hope to record how
 my performance (and hopefully, others) at Blackjack changes when
-assisted by the AI.
+assisted by the AI.~~
+
+The AI “assistant” is now included in the blackjack game. The assistant
+reports the best choice of action for the player to take along with a
+score indicating the strength of the recommendation.
+
+![](figures/game_assist.JPG)
