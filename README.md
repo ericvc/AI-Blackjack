@@ -25,5 +25,5 @@ it was trained can be found in the `ai/` directory of this repo. The
 assistant can be toggled off (it is on by default) at the beginning of a
 game.
 
-![](/media/eric/Lockbox/GitHub/Simple-Blackjack/ai/figures/game_assist.JPG)
-![](/media/eric/Lockbox/GitHub/Simple-Blackjack/ai/README_files/figure-markdown_github/plotting_2-1.png)
+![](ai/figures/game_assist.JPG)
+![](ai/README_files/figure-markdown_github/plotting_2-1.png)
