@@ -1,4 +1,3 @@
-import keras
 import numpy as np
 import tensorflow as tf
 from keras import initializers
@@ -33,7 +32,8 @@ def dealer(player_hand, dealer_hand, deck: tuple):
     :param player_hand: numpy array representing the player's current hand.
     :param dealer_hand: numpy array representing the dealer's current (revealed) hand.
     :param deck: tuple representing the card deck to be sampled from. Each element in the deck should be a card value.
-    :return: a boolean value indicating whether a player won (True) or lost (False) the hand.
+    :return: a boolean value indicating whether a player won (True) or lost (False) the hand. Also, a flag
+    (int) giving other information about the outcome of the round.
     """
     vals = np.unique(deck)
     assert (player_hand * vals).sum() <= 21
@@ -113,7 +113,6 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
         # Use the target model to generate predictions based on the hand
         q_value_predictions = np.stack([target_model(cards, training=True) for sample in range(50)])
         q_values = q_value_predictions.mean(axis=0)[0]
-        #action = random.choices(population=["stay","hit"], weights=[q_values[0:3].sum(), q_values[3]], k=1)[0]
         if q_values[0:3].sum() > q_values[3]:
             action = "stay"
         else:
