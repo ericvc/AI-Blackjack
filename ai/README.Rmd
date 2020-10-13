@@ -1,16 +1,24 @@
-Creating a Blackjack AI with Reinforcement Learning, Python, and Keras
-================
+---
+title: "Creating a Blackjack AI with Reinforcement Learning, Python, and Keras"
+#author: "Eric Van Cleave"
+#date: "9/9/2020"
+output: 
+    github_document
+---
 
-Introduction
-------------
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+```
+
+## Introduction
 
 In this repo, I provide some Python code for training a machine learning model to play the game of blackjack. The model was fit using the Keras API for Tensorflow 2.2.
 
-Before, I delve into model fitting, I will provide some background into the game, the decisions that went into constructing the machine model, and how the model was implemented to create an AI.
+Before, I delve into model fitting, I will provide some background into the game, the decisions that went into constructing the machine model, and how the model was implemented to create an AI. 
 
 The following imports are required in order for the code in this repo to function properly:
-
-``` python
+```{python, eval=FALSE}
 import keras
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,47 +33,49 @@ from keras.optimizers import Adam
 
 Blackjack is a good game on which to train a machine learning model because the rules are straightforward and the gameplay is mostly algorithmic. The steps for playing a hand of blackjack are as follows:
 
-1.  A player starts with two cards in their "hand", whose overall value is determined by summing the values of the cards together (face cards are worth 10). The goal for the player is to maximize the value of their hand without exceeding a total value of 21.
+1. A player starts with two cards in their "hand", whose overall value is determined by summing the values of the cards together (face cards are worth 10). The goal for the player is to maximize the value of their hand without exceeding a total value of 21.
 
-2.  The dealers initial hand also consists of two cards, but only one of these is visible to the player(s).
+2. The dealers initial hand also consists of two cards, but only one of these is visible to the player(s).
 
-3.  At each time step in the game, the player can either request an additional card from the dealer ("hit") or opt to stay with their current hand ("stay").
+3. At each time step in the game, the player can either request an additional card from the dealer ("hit") or opt to stay with their current hand ("stay").
 
-4.  If the player's hand value exceeds 21 ("bust"), the player loses the round. If the player's hand value is less than 21 and they choose stay, the dealer begins their routine.
+4. If the player's hand value exceeds 21 ("bust"), the player loses the round. If the player's hand value is less than 21 and they choose stay, the dealer begins their routine.
 
-5.  After a player elects to stay, the dealer is obligated to increase the value of their hand by hitting until the value of the hand is greater than 16. At this point, if the value of the dealer's hand is greater than 21, the player wins. If the value of the dealer's hand is greater than the player's hand (and less than or equal to 21), the dealer wins. Otherwise, the player also wins the round.
+5. After a player elects to stay, the dealer is obligated to increase the value of their hand by hitting until the value of the hand is greater than 16. At this point, if the value of the dealer's hand is greater than 21, the player wins. If the value of the dealer's hand is greater than the player's hand (and less than or equal to 21), the dealer wins. Otherwise, the player also wins the round.
 
-6.  If the player or dealer busts and their hand contains one or more ace cards, the value of an ace is converted from 11 to 1. The player or dealer can then resume their hand. (Another reason why it is important to consider the composition of a hand and not only its standing value at each decision-making opportunity).
+6. If the player or dealer busts and their hand contains one or more ace cards, the value of an ace is converted from 11 to 1. The player or dealer can then resume their hand. (Another reason why it is important to consider the composition of a hand and not only its standing value at each decision-making opportunity).
 
 Not considered here is the ability to split a hand under certain circumstances. While an important rule and facet of the game, it is not relevant to the decisions made on the basis of predictions from the machine learning model.
 
 <center>
-![Guidelines for choosing to 'hit' or 'stay'. Source: <https://saliu.com/bbs/messages/592.html>](figures/hit-stand.gif)
+![Guidelines for choosing to 'hit' or 'stay'. Source: https://saliu.com/bbs/messages/592.html](figures/hit-stand.gif)
 </center>
+
 In blackjack, players can maximize their performance by following a general set of rules on when to hit or stay, a decision that is influenced by both the current value of the player's hand as well as the value of the card shown by the dealer (this is **not** the same as "counting cards"). **The goal of this project is to build a machine learning model to generate a similar set of rules such as these. Once trained, this model will be used to determine the decisions made by a game-playing AI on the basis of the predicted outcome of a given hand.**
 
 ### Representing the data
 
-When I first had the thought to train a model to play blackjack, I purposefully refrained from doing online research to see what approaches others had used to achieve similar goals because I wanted the exercise of tackling the problem from scratch. The first step of the process was how deciding how to represent the data, in this case a hand of cards, for use in a machine learning model.
+When I first had the thought to train a model to play blackjack, I purposefully refrained from doing online research to see what approaches others had used to achieve similar goals because I wanted the exercise of tackling the problem from scratch. The first step of the process was how deciding how to represent the data, in this case a hand of cards, for use in a machine learning model. 
 
 My initial thought was to predict the outcome of a hand at each time step based only on the current value of the hand, ignoring the card composition of the hand that yields its overall value. However, after some consideration I decided that composition of the cards would also be important information when predicting the potential outcomes for a given hand, and that I would need to somehow encode this information as a feature of the data. Indeed, a well-known fact about the game of blackjack is that is typically advantageous to start a hand with smaller value cards.
 
-To capture this information, I chose to represent the hand of cards as a 11-D column vector **P**, one dimension for each card in the deck (plus the "1" card obtained from conversion of an ace). Here, the value of *p\_i* corresponds to the **number of cards in the hand** with a value of *i*. Therefore, the composition of each hand is encoded in the structure of the vector.
+To capture this information, I chose to represent the hand of cards as a 11-D column vector **P**, one dimension for each card in the deck (plus the "1" card obtained from conversion of an ace). Here, the value of *p_i* corresponds to the **number of cards in the hand** with a value of *i*. Therefore, the composition of each hand is encoded in the structure of the vector.
 
 <center>
 ![The player hand (P) matrix](figures/p_matrix.gif)
 </center>
+
 For example, consider the following hand represented in the vector form just described:
 <center>
 ![The player hand (P) matrix](figures/example_hand.gif)
 </center>
-Can you determine the card composition of the hand? You should get \[3\], \[3\], \[5\], and \[6\] for a total value of 17. In fact, this method of representing the composition of a hand of cards also makes it easy to calculate its overall value when simulating each game because the value of a player's hand *h* is given from:
+Can you determine the card composition of the hand? You should get [3], [3], [5], and [6] for a total value of 17. In fact, this method of representing the composition of a hand of cards also makes it easy to calculate its overall value when simulating each game because the value of a player's hand *h* is given from:
 <center>
 ![Calculating the value of a player's hand](figures/hand_value.gif)
 </center>
-The following function is used to simulate dealing cards (from an infinitely large number of standard playing decks) by randomly generating the "card vectors" described above:
 
-``` python
+The following function is used to simulate dealing cards (from an infinitely large number of standard playing decks) by randomly generating the "card vectors" described above:
+```{python, eval=FALSE}
 # Create some helper functions for the main program loop
 def create_card_vectors(n: int, deck: tuple):
     """
@@ -82,25 +92,22 @@ def create_card_vectors(n: int, deck: tuple):
     for i in val:
         vec[:, i-1] += 1
     return vec
+
 ```
-
 For example, the starting hand of a player is generated here using the function that was just defined.
-
-``` python
+```{python, eval=FALSE}
 >>> hand = create_card_vectors(n=2, deck=(1,2,3,4,5,6,7,8,9,10,10,10,10,11))
 >>> print(hand)
 array([[0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0]])
 ```
+The above array represents a starting hand with cards [3] and [10] for a total hand value of 13. Note also that the `tuple` representing a deck of cards contains four copies of the value of 10 but only a single copy for all other values. This is to take into account that cards with a value of 10 are represented by the [10] card as well as the face cards [J], [Q], and [K].
 
-The above array represents a starting hand with cards \[3\] and \[10\] for a total hand value of 13. Note also that the `tuple` representing a deck of cards contains four copies of the value of 10 but only a single copy for all other values. This is to take into account that cards with a value of 10 are represented by the \[10\] card as well as the face cards \[J\], \[Q\], and \[K\].
-
-Before a player makes their decision to stay with their current cards (or loses by busting), only a single card from the dealer's hand **D** is known to the player(s). This information is also important to include in the model (see also the strategy chart in the first figure above). For example, consider the following card vector belonging to the dealer and known to the player(s) during the course of the round. It reveals the dealer is in possesseion of a \[10\] card:
+Before a player makes their decision to stay with their current cards (or loses by busting), only a single card from the dealer's hand **D** is known to the player(s). This information is also important to include in the model (see also the strategy chart in the first figure above). For example, consider the following card vector belonging to the dealer and known to the player(s) during the course of the round. It reveals the dealer is in possesseion of a [10] card:
 
 ![](figures/dealer_hand_example.gif)
 
 Once the player decides to stay with their current set of cards, the player and dealer card vectors are passed to a function `dealer()` that will simulate the outcome of the round. The function will return `True` if the player wins and `False` if not.
-
-``` python
+```{python, eval=FALSE}
 def dealer(player_hand, dealer_hand, deck: tuple):
     """
     This function simulates the behavior of a dealer in the game of "21". For a given input 'val', representing the
@@ -133,7 +140,7 @@ def dealer(player_hand, dealer_hand, deck: tuple):
 
 Thus, the final data array (`cards`) passed to the machine learning model will be a 22-D column vector created by concatenating the vectors **P** and **D**:
 
-``` python
+```{python, eval=FALSE}
 >>> deck = (1,2,3,4,5,6,7,8,9,10,10,10,10,11)
 >>> P = create_card_vectors(2, deck) # Player cards
 >>> print(P)
@@ -152,28 +159,28 @@ array([[0, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]])
 
 With the data structure figured out, I then needed to determine at what point in a game of blackjack that the model should be trained. The model will primarily help decide whether the AI should 'hit' or 'stay', but the payoff of each action is not determined until later in the round, once the player has finalized their hand and the dealer runs through their routine. Breaking this down, I came up with the idea to classify three types of ouctomes directly influenced by the decisions of the player.
 
--   Type 1 Outcome (Blue; right): The dealer tried to increase the value of their hand, but ended up exceeding a total value of 21 ("dealer bust"). If predicted, the AI should elect to 'stay' rather than 'hit' in order to avoid a bust.
+* Type 1 Outcome (Blue; right): The dealer tried to increase the value of their hand, but ended up exceeding a total value of 21 ("dealer bust"). If predicted, the AI should elect to 'stay' rather than 'hit' in order to avoid a bust.
 
--   Type 2 Outcome (Green; center left): The player decided to stay with their current hand, but the value was too low and the dealer won ("too low"). If predicted, the best decision for the AI is to 'hit'.
+* Type 2 Outcome (Green; center left): The player decided to stay with their current hand, but the value was too low and the dealer won ("too low"). If predicted, the best decision for the AI is to 'hit'.
 
--   Type 3 Outcome (Orange; center right): The player decided to stay with their current hand and won because the dealer's hand was greater than 16 but still lower than the value of the player's hand (a win; "stay and win"). The optimal decision was to 'stay'.
+* Type 3 Outcome (Orange; center right): The player decided to stay with their current hand and won because the dealer's hand was greater than 16 but still lower than the value of the player's hand (a win; "stay and win"). The optimal decision was to 'stay'.
 
--   Type 4 Outcome (Purple; right): The player tried to increase the value of their current hand, but ended up exceeding a total value of 21 (a bust; "too high"). If predicted, the AI should elect to 'stay'.
+* Type 4 Outcome (Purple; right): The player tried to increase the value of their current hand, but ended up exceeding a total value of 21 (a bust; "too high"). If predicted, the AI should elect to 'stay'.
 
-Once trained, the AI uses the machine learning model to predict the probability of each type of outcome (*Q-values*), and next uses that information to decide whether to 'hit' or 'stay' using a programmed decison-making process. For example, if the model predicts that the *total probability* of outcome Types 1, 3, **or** 4 ocurring is greater than Type 2, then the best to decision is to 'stay' with the current hand. If instead the predicted probability of a Type 2 outcome ("too low") is greater than or equal to the total probability of all other outcomes, the AI will instead elect to receive an additional card ('hit').
 
-``` python
+Once trained, the AI uses the machine learning model to predict the probability of each type of outcome (*Q-values*), and next uses that information to decide whether to 'hit' or 'stay' using a programmed decison-making process. For example, if the model predicts that the *total probability* of outcome Types 1, 3, **or** 4 ocurring is greater than Type 2, then the best to decision is to 'stay' with the current hand. If instead the predicted probability of a Type 2 outcome ("too low") is greater than or equal to the total probability of all other outcomes, the AI will instead elect to receive an additional card ('hit'). 
+```{python, eval=FALSE}
 Q_values = model.predict(cards)[0]
 if Q_values[0] + Q_values[2] + Q_values[3] > Q_values[1]:
     action = "stay"
 else:
     action = "hit"
 ```
-
 The outcome of each round *y* can be considered a categorical variable and encoded as follows:
 <center>
 ![Coding the three types of game outcomes for training the machine learning model.](figures/outcomes.gif)
 </center>
+
 Now, we know when to train the model and what the data structures for the model will look like.
 
 ### Model Fitting
@@ -181,9 +188,10 @@ Now, we know when to train the model and what the data structures for the model 
 <center>
 ![Schematic representation of the game-playing AI, showing how the results of each round of Blackjack are used to train the machine learning model and generate predictions for future rounds.](figures/game_summary.png)
 </center>
+
 Simulating games and training models based on the current conditions and observed outcomes is a form of reinforcement learning (RL). RL generally requires more examples to train on than other machine learning approaches, but the data can typically be generated easily by simluation. The process may just take a while.
 
-``` python
+```{python, eval=FALSE}
 def create_online_model(n_neurons: int = 32, verbose: bool=True, save_graph: bool=False) -> tf.keras.Model:
     """
     This function creates a neural network used for online training.
@@ -220,7 +228,7 @@ The model used is a deep neural network with a user-selected number of neurons a
 
 My first attempt at fitting the model used L2 regularization on the weights of the `Dense` layers. But after examining some of the results of the trained model, I quickly suspected that it would also be important to consider the uncertainty in these model predictions because, in many cases, the decision of whether the agent should 'hit' or 'stay' was based on probabilities close to 50% (ambiguous). In the second version of the model, weight decay was replaced by `Dropout` layers as a means of regularization. Using dropout layers also allows for estimation of the uncertainty in the model predictions by using a technique called Monte Carlo dropout, which is similar to approximate Bayesian inference. MC dropout works by sampling **n** predictions from the model, setting the "training" argument to True in order to use the dropout layers. Because different combinations of neurons are used for each sample, each of the estimates will differ. Averaging over these samples will then give a better point estimate of the predicted outcome, and can also be used to calculate a credibility interval for the estimate. The downside of this approach is that each simulation takes a bit longer because of the need to generate samples. Because of the high number of iterations needed to train the model, this small extra step can actually lead to a much longer overall training time. Here is an example that generates 50 sample predictions for a given input, averages over them to find a point estimate of the central tendency, and also calculates the 90% highest posterior density interval (HPDI):
 
-``` python
+```{python, eval=FALSE}
 from numpyro import hpdi #  HPDI function
 
 cards = np.concatenate((player_cards, dealer_cards), axis=1) #  model input
@@ -233,7 +241,7 @@ print(Q_values_hpdi)
 
 The code for simulating a single round of blackjack is given here:
 
-``` python
+```{python, eval=FALSE}
 def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, deck: tuple):
     """
     This function runs a single instance of a game of 21.
@@ -305,7 +313,7 @@ Blackjack simulations are run repeatedly, with the observed outcomes of the game
 
 The framework used here is very similar to approaches from proper Deep Q-Learning, but differ in two import respects. First, the decision-making model is updated each round using a labeled (categorical) outcome with categorical cross-entropy loss function. True Q-learning would instead involve training a network based on the outcome of a continuous reward function (e.g., Huber loss). Second, there is no "replay buffer" or limited cache of prior gameplay experiences for the model to call upon. The model used here is updated after each round, with no memory limitation.
 
-``` python
+```{python, eval=FALSE}
 def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
     """
     This function "manages" multiple instances of games of Blackjack, and uses their outcomes to train reinforcement models
@@ -334,10 +342,8 @@ def run_simulations(n_train: int, n_update: int = 100, n_report: int = 500):
             print(f"Iteration: {ite}/{n_train}...Overall Accuracy: {overall_win}...Running Accuracy: {running_win}")
     return online_model, target_model, outcomes
 ```
-
 Now, all that is left to do is set the number of training iterations and let the program run:
-
-``` python
+```{python, eval=FALSE}
 # Run game simulations (takes a bit of time)
 n_train = 50000
 online_model, target_model, outcomes = run_simulations(n_train=n_train, n_update=100)
@@ -352,10 +358,8 @@ with open(fname, "w") as json_file:
 online_model.save_weights("ai/models/online_model.h5")
 print("Saved model to disk")
 ```
-
 If the model needs to be loaded at a later time:
-
-``` python
+```{python, eval=FALSE}
 # load json and create model
 json_file = open('ai/models/online_model.json', 'r')
 loaded_model_json = json_file.read()
@@ -366,12 +370,11 @@ loaded_model.load_weights("ai/models/online_model.h5")
 print("Loaded model from disk")
 ```
 
-Exploring the Results
----------------------
+## Exploring the Results
 
 The obvious first test to was to examine the winning rate of the AI. Using the `run_simulation` function created earlier, I simulated 5000 rounds of Blackjack using the target values from the trained ML model:
 
-``` python
+```{python, eval=FALSE}
 result = []  # Save outcome of each round to container
 n_iter = 5000  # Number of games to simulate
 deck_of_cards = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11)
@@ -391,7 +394,7 @@ I also wanted to get a sense of how the results of the neural network could guid
 
 Viewing the continuous probabilities, however, also reveals a large region of the card space where the "best" action is predicted to be only slightly better than the alternative. In these cases, chance will largely determine whether an action produces the desired outcome.
 
-``` r
+```{r plotting, fig.align="center", eval=FALSE}
 library(tidyr)
 library(ggplot2)
 library(dplyr)
@@ -420,12 +423,11 @@ pc = ggplot(M[M$action>0,], aes(x=factor(pc2), y=factor(pc1), fill=action)) +
   theme(axis.title = element_text(face="bold"))
 pc
 ```
-
 ![](figures/plot1.png)
 
-Here I have binned the values predicted by the model, showing starting player hand card combinations where the model suggests the player should definitively 'hit' or 'stay'. These include those regions of the card space where *Pr(Stay) &gt; 0.6 OR Pr(Stay) &lt; 0.4*. An 'ambiguous hit (A-Hit)' and 'ambiguous stay (A-Stay)' are those card combinations suggesting either a 'hit' or 'stay' action respectively, but that also fall within plus or minus 10 percentage points of 50% (equivalence):
+Here I have binned the values predicted by the model, showing starting player hand card combinations where the model suggests the player should definitively 'hit' or 'stay'. These include those regions of the card space where *Pr(Stay) > 0.6 OR Pr(Stay) < 0.4*. An 'ambiguous hit (A-Hit)' and 'ambiguous stay (A-Stay)' are those card combinations suggesting either a 'hit' or 'stay' action respectively, but that also fall within plus or minus 10 percentage points of 50% (equivalence):
 
-``` r
+```{r plotting_2, fig.align="center", eval=FALSE}
 action_class = ifelse(M$action >= 0.6,
                       "Stay",
                       ifelse(
@@ -449,11 +451,9 @@ pd = ggplot(M[M$action>0,], aes(x=factor(pc1), y=factor(pc2), fill=action_class[
   theme(axis.title = element_text(face="bold"))
 pd
 ```
-
 ![](figures/plot2.png)
 
-Future Directions
------------------
+## Future Directions
 
 The game-playing AI shown here uses a machine learning model to decide the best action ('hit' or 'stay') given the composition of the current hand and the value of the dealer up card. From this simple set of decision-making rules, guided by the predictions ML model, the AI wins games at a rate of around 36%.
 

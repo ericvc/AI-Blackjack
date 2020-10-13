@@ -7,7 +7,7 @@ from keras.optimizers import Adam
 
 
 # Create some helper functions for the main program loop
-def create_card_vectors(n: int, deck: tuple) -> np.array:
+def create_card_vectors(n: int, deck: tuple, split: bool=False) -> np.array:
     """
     This function creates 'card vectors' - column vectors with 11 rows, where i-th row corresponds to playing cards
     with value i+1. The scalar value of each row represents the number of each card the player currently posses.
@@ -18,9 +18,14 @@ def create_card_vectors(n: int, deck: tuple) -> np.array:
     """
     n_cards = len(set(deck))
     cardvec = np.array([[0] * n_cards])
-    val = np.random.choice(deck[1:], n, replace=True) #  Do not sample '1'
-    for i in val:
-        cardvec[:, i-1] += 1
+    if split:
+        assert n == 2
+        val = np.random.choice(deck[1:], n, replace=True)  # Do not sample '1'
+        cardvec[:, val] += 2
+    else:
+        val = np.random.choice(deck[1:], n, replace=True)  # Do not sample '1'
+        for i in val:
+            cardvec[:, i-1] += 1
     return cardvec
 
 
@@ -108,8 +113,10 @@ def run_simulation(online_model: tf.keras.Model, target_model: tf.keras.Model, d
         return 0
 
     while True:
+        
         # Array with the player hand and dealer hand represented as 1-D column vectors
         cards = np.concatenate((player_hand, dealer_hand), axis=1)
+
         # Use the target model to generate predictions based on the hand
         q_value_predictions = np.stack([target_model(cards, training=True) for sample in range(50)])
         q_values = q_value_predictions.mean(axis=0)[0]

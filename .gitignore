@@ -1,0 +1,6 @@
+
+.idea/
+
+simple_blackjack/__pycache__/
+
+*.pyc

@@ -107,7 +107,7 @@ def deal_cards(n: int):
 
 def get_starting_amount():
     """
-    This function check that the starting player balance meets criteria: a floating point value greater than zero.
+    This function check that the starting player balance meets criteria: a flpating point value greater than zero.
     :return: A floating point representing the initial player balance.
     """
     if len(argv) == 1:  # default starting amount
